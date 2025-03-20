@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<h1 class="title-text">About the lab .. 🧪 </h1>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link type="text/css" rel="stylesheet" href="main.css">
+		<style>
+			* {
+				box-sizing: border-box;
+				-moz-box-sizing: border-box;
+			}
+
+			body {
+				background-color: #EFEFEF !important;
+				color: #444;
+				margin: auto;
+				padding: .1in;
+				max-width: 7in;
+				text-align: justify;
+			}
+
+			a {
+				color: #A60303;
+			}
+
+			#info {
+				left: 0px;
+			}
+
+			.view {
+				width: 5in;
+				height: 5in;
+				margin: auto;
+			}
+
+			#c {
+				position: fixed;
+				left: 0px; top: 0px;
+				width: 100%;
+				height: 100%;
+				background-color: transparent !important;
+				z-index: -1;
+			}
+		</style>
+	</head>
+	<body>
+        <a href="index.html" class="back-arrow">←</a>
+		<canvas id="c"></canvas>
+
+		<div id="info" class="customforabout-info">Immersive digital experience<br>experiments</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "../build/three.module.js",
+					"three/addons/": "./jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three';
+
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+			const scenes = [];
+
+			const clock = new THREE.Clock();
+
+			let views, t, canvas, renderer;
+
+			window.onload = init;
+
+			function init() {
+
+				const balls = 20;
+				const size = 0.15;
+
+				const colors = [
+					'rgb(0,127,255)', 'rgb(255,0,0)', 'rgb(0,255,0)', 'rgb(0,255,255)',
+					'rgb(255,0,255)', 'rgb(255,0,127)', 'rgb(255,255,0)', 'rgb(0,255,127)'
+				];
+
+				canvas = document.getElementById( 'c' );
+
+				renderer = new THREE.WebGLRenderer( { canvas: canvas, antialias: true } );
+				renderer.setPixelRatio( window.devicePixelRatio );
+				renderer.setAnimationLoop( animate );
+
+				views = document.querySelectorAll( '.view' );
+
+				for ( let n = 0; n < views.length; n ++ ) {
+
+					const scene = new THREE.Scene();
+					scene.background = new THREE.Color( 0xffffff );
+
+					const geometry0 = new THREE.BufferGeometry();
+					const geometry1 = new THREE.BufferGeometry();
+
+					const vertices = [];
+
+					if ( views[ n ].lattice ) {
+
+						const range = balls / 2;
+						for ( let i = - range; i <= range; i ++ ) {
+
+							for ( let j = - range; j <= range; j ++ ) {
+
+								for ( let k = - range; k <= range; k ++ ) {
+
+									vertices.push( i, j, k );
+
+								}
+
+							}
+
+						}
+
+					} else {
+
+						for ( let m = 0; m < Math.pow( balls, 3 ); m ++ ) {
+
+							const i = balls * Math.random() - balls / 2;
+							const j = balls * Math.random() - balls / 2;
+							const k = balls * Math.random() - balls / 2;
+
+							vertices.push( i, j, k );
+
+						}
+
+					}
+
+					geometry0.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
+					geometry1.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices.slice(), 3 ) );
+
+					const index = Math.floor( colors.length * Math.random() );
+
+					const canvas2 = document.createElement( 'canvas' );
+					canvas2.width = 128;
+					canvas2.height = 128;
+					const context = canvas2.getContext( '2d' );
+					context.arc( 64, 64, 64, 0, 2 * Math.PI );
+					context.fillStyle = colors[ index ];
+					context.fill();
+					const texture = new THREE.CanvasTexture( canvas2 );
+					texture.colorSpace = THREE.SRGBColorSpace;
+
+					const material = new THREE.PointsMaterial( { size: size, map: texture, transparent: true, alphaTest: 0.1 } );
+
+					scene.add( new THREE.Points( geometry0, material ) );
+
+					scene.userData.view = views[ n ];
+					scene.userData.geometry1 = geometry1;
+
+					const camera = new THREE.PerspectiveCamera( 75, 1, 0.1, 100 );
+					camera.position.set( 0, 0, 1.2 * balls );
+					scene.userData.camera = camera;
+
+					const controls = new OrbitControls( camera, views[ n ] );
+					scene.userData.controls = controls;
+
+					scenes.push( scene );
+
+				}
+
+				t = 0;
+				animate();
+
+			}
+
+			function updateSize() {
+
+				const width = canvas.clientWidth;
+				const height = canvas.clientHeight;
+
+				if ( canvas.width !== width || canvas.height != height ) {
+
+					renderer.setSize( width, height, false );
+
+				}
+
+			}
+
+			function animate() {
+
+				updateSize();
+
+				renderer.setClearAlpha(0);
+				renderer.setScissorTest( false );
+				renderer.clear();
+
+				renderer.setClearColor( 0x000000 );
+				renderer.setScissorTest( true );
+
+				scenes.forEach( function ( scene ) {
+
+					const rect = scene.userData.view.getBoundingClientRect();
+
+					// check if it's offscreen. If so skip it
+
+					if ( rect.bottom < 0 || rect.top > renderer.domElement.clientHeight ||
+						 rect.right < 0 || rect.left > renderer.domElement.clientWidth ) {
+
+						return; // it's off screen
+
+					}
+
+					// set the viewport
+
+					const width = rect.right - rect.left;
+					const height = rect.bottom - rect.top;
+					const left = rect.left;
+					const bottom = renderer.domElement.clientHeight - rect.bottom;
+
+					renderer.setViewport( left, bottom, width, height );
+					renderer.setScissor( left, bottom, width, height );
+
+					renderer.render( scene, scene.userData.camera );
+
+					const points = scene.children[ 0 ];
+					const position = points.geometry.attributes.position;
+					
+
+					const point = new THREE.Vector3();
+					const offset = new THREE.Vector3();
+
+					for ( let i = 0; i < position.count; i ++ ) {
+
+						point.fromBufferAttribute( scene.userData.geometry1.attributes.position, i );
+
+						scene.userData.view.displacement( point.x, point.y, point.z, t / 5, offset );
+
+						position.setXYZ( i, point.x + offset.x, point.y + offset.y, point.z + offset.z );
+
+					}
+
+					position.needsUpdate = true;
+
+				} );
+
+				t += clock.getDelta() * 60;
+
+			}
+
+		</script>
+
+        <p class="xyz-text">
+        <br>This labatory, located on the web, documents the essence of Gonni’s digital experiments of creating immersive web experiences.<br><br>
+        It records Gonni’s first journey in translating her visual concepts through coding, using a JavaScript API that enables 3D graphics in users' browsers via the GPU, allowing them to experience spatial web space.<br><br>
+		Through this project, she aimed to enable developing prototypes by herself through coding, ensuring that she could realise her visual ideas and direction witout limitations.</p>
+
+		</div>
+		
+
+		<p class="xyzword-text">1. XYZ Experiment</p>
+
+		<p class="xyz-text">
+			Instead of using mesh based 3D objects, she experimented with raw XYZ coordinate data file, which is a number-based text file that stores the X,Y,Z coordinates in 3D space, to generate supernatural structure of energy flow looking visual through moving dots based on the data carculation.
+			
+			</p> 
+	    <img src="points.png" alt="Visualization of moving dots" class="xyz-image">
+			
+		<p class="xyz-text">	
+		    She imported a Helix-shaped XYZ file and transformed it into a dandelion-like structure to visualise the flowing movement of aura. This transformation was inspired by the way natural forces shape organic structures, to realise the visual of energy flow and aura. 
+			She experimented adjusting the xyz data files for the density, positioning, and randomness of the countless dots.
+			</p>
+	    <img src="pointsxyz.png" alt="Visualization of moving dots" class="xyzpoint-image">
+		<img src="experimentalgroup2.jpg" alt="Visualization of moving dots" class="xyzpoint-image">
+		<img src="experimentalgroup1.jpg" alt="Visualization of moving dots" class="xyzpoint-image">
+		<img src="experimentalgroup3.jpg" alt="Visualization of moving dots" class="xyzpoint-image">
+		<img src="experimentalgroup4.jpg" alt="Visualization of moving dots" class="xyzpoint-image">
+		<img src="experimentalgroup5.jpg" alt="Visualization of moving dots" class="xyzpoint-image">
+        
+		<p class="xyz-text">10 experimental variables.xyz</p>
+		<br><br><br><br>
+
+		<div class="view">
+
+
+		<script>
+
+			parent = document.scripts[ document.scripts.length - 1 ].parentNode;
+
+			parent.displacement = function ( x, y, z, t, target ) {
+
+				return target.set( Math.sin( x - t ), 0, 0 );
+
+			};
+
+			parent.lattice = false;
+
+		</script>
+
+		</div><br><br>
+
+		<p class="xyzword-text">
+		    2. BufferGeometry Particles Experiment</p>
+        
+		<p class="xyz-text">
+			She explored fragmented, particle-driven formations, using Vector calculations (Vector2.js, Vector3.js) to visualise the particle waves spreaded above the ocean. 
+			</p>
+
+
+		</div>
+
+
+		</div><br><br>
+		<img src="Wave.png" alt="Visualization of moving dots" class="water-image"><br><br><br><br><br>
+
+		<div class="view">
+
+		<script>
+
+			parent = document.scripts[ document.scripts.length - 1 ].parentNode;
+
+			parent.displacement = function ( x, y, z, t, target ) {
+
+				if ( x * x + y * y + z * z < 0.01 ) {
+
+					return target.set( 0, 0, 0 );
+
+				} else {
+
+					const r = Math.sqrt( x * x + y * y + z * z );
+					const theta = Math.acos( z / r );
+					const phi = Math.atan2( y, x );
+
+					return target.set( 3 * Math.cos( phi ) * Math.sin( theta ) * Math.sin( r - t ) / r, 3 * Math.sin( phi ) * Math.sin( theta ) * Math.sin( r - t ) / r, 3 * Math.cos( theta ) * Math.sin( r - t ) / r );
+
+				}
+
+			};
+
+			parent.lattice = true;
+
+		</script>
+
+		</div>
+
+		</div><br><br><br>
+
+	</body>
+</html>
