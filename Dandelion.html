@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>XYZ Point Cloud Viewer</title>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.module.min.js"
+            }
+        }
+    </script>
+</head>
+<body style="margin: 0; overflow: hidden; background-color: black;">
+    <script type="module">
+        import * as THREE from "three";
+
+        // 1. 씬 생성
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x000000); // 배경 검은색
+
+        // 2. 카메라 설정
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 10);
+        camera.position.z = 1.8; // XYZ 데이터가 잘 보이도록 조정
+
+        // 3. 렌더러 생성
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        document.body.appendChild(renderer.domElement);
+
+        // 4. XYZ 데이터 로드 및 포인트 클라우드 생성
+        fetch("points.xyz")
+            .then(response => response.text())
+            .then(data => {
+                const points = [];
+                const scaleFactor = 1000;
+                const lines = data.split("\n");
+
+                for (let line of lines) {
+                    const [x, y, z] = line.split(" ").map(Number);
+                    if (!isNaN(x) && !isNaN(y) && !isNaN(z)) {
+                        points.push(new THREE.Vector3(x, y, z));
+                    }
+                }
+
+
+                // 5. 점 형태로 표시
+                const material = new THREE.PointsMaterial({
+                color: 0xffffff,     // 흰색 점
+                size: 1,           // 🔥 포인트 크기 증가
+                sizeAttenuation: false,  // 🌟 카메라 거리에 따라 크기 변하지 않도록
+                transparent: true,   // 투명도 추가
+                opacity: 0.7,         // 불필요한 투명화 방지
+                depthTest: true     // 깊이 테스트 활성화
+                });
+
+                const geometry = new THREE.BufferGeometry().setFromPoints(points);
+                const pointCloud = new THREE.Points(geometry, material);
+                scene.add(pointCloud);
+
+                // 6. 한 번만 렌더링
+                renderer.render(scene, camera);
+            });
+
+        // 창 크기 조정 시 업데이트
+        window.addEventListener("resize", () => {
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+        });
+    </script>
+</body>
+</html>

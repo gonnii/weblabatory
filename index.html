@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="main.css">
+  <title>Landing Page</title>
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./build/three.module.js",
+      "three/addons/": "./jsm/",
+      "three/shaders/UniformsLib": "./build/shaders/UniformsLib.js",
+      "three/math/Color.js": "./jsm/math/Color.js",
+      "three/math/Vector2.js": "./jsm/math/Vector2.js",
+      "three/math/Matrix3.js": "./jsm/math/Matrix3.js"
+    }
+  }
+  </script>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+  <div id="scene-container">
+    <div id="info" class="custom-info">
+      A lab for documenting immersive web experiments
+    <div class="description-text">
+      Drag to rotate the lab 360 <br> Click the wooden sculpture to look inside
+  </div>
+</div>
+
+  </div>
+  <script type="module">
+    import { Scene, PerspectiveCamera, WebGLRenderer, Vector3, TextureLoader, RepeatWrapping, SphereGeometry, MeshPhysicalMaterial, Mesh, DirectionalLight, MathUtils, Box3, Sphere, PointLight, Vector2, EquirectangularReflectionMapping, PlaneGeometry, MeshBasicMaterial, PointsMaterial, Points, Raycaster, ShaderMaterial, Color, BufferGeometry, BufferAttribute} from 'three';;
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+    import { Water } from 'three/addons/objects/Water.js';
+    import { Sky } from 'three/addons/objects/Sky.js';
+    import { GLTFLoader } from './jsm/loaders/GLTFLoader.js';
+    import { RGBELoader } from './jsm/loaders/RGBELoader.js';
+    import { XYZLoader } from './jsm/loaders/XYZLoader.js';
+    import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+    import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+    import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+    import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+    import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+
+    let camera, scene, renderer, controls, sun;
+    let composer, bloomPass;
+    let points, water = null;
+    let particles, count = 0;
+    const SEPARATION = 15, AMOUNTX = 300, AMOUNTY = 300;
+
+    function init() {
+      // Scene, Camera, Renderer
+      scene = new Scene();
+      camera = new PerspectiveCamera(55, window.innerWidth / window.innerHeight, 10, 5000);
+      camera.position.set(9, 12, 300);
+      camera.layers.enable(1);
+
+      renderer = new WebGLRenderer({ antialias: true });
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      document.getElementById('scene-container').appendChild(renderer.domElement);
+
+      controls = new OrbitControls(camera, renderer.domElement);
+      controls.enableZoom = false; // 줌 비활성화
+      controls.enablePan = false; // 이동 비활성화 (이동하면 360도 제한이 깨짐)
+      controls.minPolarAngle = 0.0; // 위쪽 제한
+      controls.maxPolarAngle = Math.PI / 2.1; // 아래쪽 제한
+      controls.minDistance = 50;  
+      controls.maxDistance = 300;
+      controls.update();
+
+      const raycaster = new Raycaster();
+      const mouse = new Vector2();
+
+      // Light
+      sun = new Vector3();
+      const light = new DirectionalLight(0xffffff, 1);
+      light.position.set(100, 100, 100);
+      scene.add(light);
+
+      // (3) HDR 로더
+      const hdrLoader = new RGBELoader();
+      hdrLoader.load('./textures/hdrimage.hdr', function (hdrMap) { //
+      hdrMap.mapping = EquirectangularReflectionMapping;
+      scene.environment = hdrMap; 
+
+      // Sky
+      const sky = new Sky();
+      sky.scale.setScalar(10000);
+      scene.add(sky);
+
+      // Sky uniforms 설정
+      sky.material.uniforms.turbidity.value = 0.25;
+      sky.material.uniforms.rayleigh.value = 0.744;
+      sky.material.uniforms.mieCoefficient.value = 0.12;
+      sky.material.uniforms.mieDirectionalG.value = 6.99;
+
+      // elevation(고도)와 azimuth(방위각)
+      const elevation = 15.0;
+      const azimuth = 200;
+
+      // 각도 → 라디안 변환
+      const phi = MathUtils.degToRad(90 - elevation);
+      const theta = MathUtils.degToRad(azimuth);
+
+      // sun은 Vector3
+      sun.setFromSphericalCoords(1, phi, theta);
+      sky.material.uniforms.sunPosition.value.copy(sun);
+
+      // 톤 매핑 노출 (exposure)
+      renderer.toneMappingExposure = 0.6093; // 요청 값에 맞춰 조절
+
+      // Water
+      const waterGeometry = new PlaneGeometry(10000, 10000);
+      water = new Water(
+        waterGeometry,
+        {
+          textureWidth: 712,
+          textureHeight: 712,
+          waterNormals: new TextureLoader().load('./textures/waternormals.jpg', function (texture) {
+            texture.wrapS = texture.wrapT = RepeatWrapping;
+          }),
+          alpha: 1.0,
+          sunDirection: sun.clone().normalize(),
+          sunColor: 0xffffff,
+          waterColor: 0x001e0f,
+          distortionScale: 2.7,
+          fog: scene.fog !== undefined
+        }
+      ); //
+      water.rotation.x = -Math.PI / 2;
+      scene.add(water);
+      water.material.uniforms.distortionScale.value = 0.1; // ✅ 반사 왜곡 줄이기
+      water.material.uniforms.sunColor.value.set(0xbbbbbb); // ✅ 반사 강도 줄이기
+      water.material.uniforms.waterColor.value.set(0x003030); // ✅ 물 색상을 더 어둡게 조정
+      water.material.reflectivity = 0.0; //
+      water.material.depthWrite = false;
+
+
+      water.renderOrder = 3
+
+    const numParticles = AMOUNTX * AMOUNTY;
+
+    const positions = new Float32Array(numParticles * 3);
+    const scales = new Float32Array(numParticles);
+
+    let i = 0, j = 0;
+
+    for (let ix = 0; ix < AMOUNTX; ix++) {
+     for (let iy = 0; iy < AMOUNTY; iy++) {
+      positions[i] = ix * SEPARATION - ((AMOUNTX * SEPARATION) / 2); // X 좌표
+      positions[i + 1] = 0; // Y 좌표 (기본값)
+      positions[i + 2] = iy * SEPARATION - ((AMOUNTY * SEPARATION) / 2); // Z 좌표
+      scales[j] = 1;
+      i += 3;
+      j++;
+     }
+    }
+
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new BufferAttribute(positions, 3));
+    geometry.setAttribute('scale', new BufferAttribute(scales, 1));
+
+    const material = new ShaderMaterial({
+     uniforms: { color: { value: new Color(0xffffff) } },
+     vertexShader: `
+      attribute float scale;
+      void main() {
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+       gl_PointSize = scale * (50.0 / -mvPosition.z);
+       gl_Position = projectionMatrix * mvPosition;
+      }
+  `  ,
+     fragmentShader: `
+       uniform vec3 color;
+       void main() {
+        float distance = length(gl_PointCoord - vec2(0.5, 0.5));
+        if (distance > 0.475) discard; // 원형 유지
+        gl_FragColor = vec4(color, 1.0);
+       }
+    `,
+     depthTest: true,      // ✅ 깊이 테스트 적용
+     depthWrite: true,     // ✅ 깊이 버퍼에 기록
+     transparent: false  
+     });
+
+     particles = new Points(geometry, material);
+     scene.add(particles);
+
+     setTimeout(() => {
+     particles.material.depthTest = true;      // ✅ 깊이 테스트 활성화
+     particles.material.depthWrite = true;     // ✅ 깊이 버퍼 기록
+     particles.material.opacity = 1.0;   // ✅ 투명도 제거
+     particles.material.polygonOffset = true;
+     particles.material.polygonOffsetFactor = -5.0;
+     particles.material.polygonOffsetUnits = -5.0;
+     particles.renderOrder = 2;
+     particles.material.needsUpdate = true;
+     }, 100);
+
+
+    // 모델(FBX) 로드
+    const loader = new GLTFLoader();
+    loader.load(
+     './models/FrankieObjects.gltf',
+     function (gltf) {
+      gltf.scene.position.set(97, 220, 200);   // 원하는 좌표로 배치
+      gltf.scene.traverse((child) => {
+       if (child.isMesh) {
+        const originalMaterial = child.material;
+        child.material = new MeshPhysicalMaterial({
+         map: originalMaterial.map ?? null,  // 원래 베이스 컬러 텍스처 유지
+         normalMap: originalMaterial.normalMap ?? null,  // 원래 노멀맵 유지
+         roughnessMap: originalMaterial.roughnessMap ?? null,  // 원래 거칠기 맵 유지
+         metalnessMap: originalMaterial.metalnessMap ?? null,      // 기본 색상 (흰색 유지)
+         metalness: 0.18,       // 반사 효과 (0~1) → 반짝이게 설정 가능
+         roughness: 0.9,       // 표면 거칠기 (낮을수록 반사 높아짐)
+         transmission: 0,    // 유리 같은 투명 효과 (0~1)
+         ior: 1.5,             // 굴절률 (유리 1.5, 물 1.33)
+         clearcoat: 0.5,       // 표면 코팅 효과
+         clearcoatRoughness: 0.1,
+         reflectivity: 0.3,    // 빛 반사율 (0~1)
+         envMapIntensity: 0.8, // HDR 환경 반사 강도
+         transparent: false,
+         opacity: 0.5,
+        });
+       }
+      });
+      gltf.scene.scale.set(0.09, 0.09, 0.09); // 스케일도 적절히
+      gltf.scene.rotation.y = Math.PI; 
+      // 콜백 내부에서만 object에 접근 가능
+      scene.add(gltf.scene);
+
+      window.addEventListener('click', (event) => {
+      // 마우스 좌표 정규화
+       mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+       mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+      // Raycasting 수행
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObject(gltf.scene, true);
+
+      // 클릭된 오브젝트가 있을 경우 nextpage.html로 이동
+      if (intersects.length > 0) {
+        console.log("GLTF 오브젝트 클릭됨!");
+        window.location.href = 'Lookbook.html'; // 📌 로컬 HTML 파일로 이동
+       }
+      });
+
+
+      const xyzLoader = new XYZLoader();
+      xyzLoader.load('./models/points.xyz', (geometry) => {
+      const material = new PointsMaterial({ color: 0xffffff, size: 0.15, sizeAttenuation: true,
+        depthTest: false, opacity: 0.3, transparent: true });
+        geometry.rotateX(Math.PI / 2);
+       
+      
+      points = new Points(geometry, material);
+      points.position.set(98.8, 223, 160); // GLTF 모델과 같은 위치로 맞추기
+      points.scale.set(20, 20, 20);
+      scene.add(points);
+      });
+
+      // glTF 로딩 콜백 내부, scene.add(gltf.scene) 직후
+      const box = new Box3().setFromObject(gltf.scene);
+      const center = box.getCenter(new Vector3());
+      const sphere = new Sphere();
+      box.getBoundingSphere(sphere);
+      // OrbitControls에 모델 중심을 타겟으로 지정
+      controls.target.set(center.x, center.y, center.z);
+
+      // 카메라를 모델 중심에서 반경 * 2 정도 떨어진 곳으로 이동
+      camera.position.set(
+      center.x,center.y,center.z + sphere.radius * 2
+      );
+      camera.updateProjectionMatrix();
+      controls.update();
+      console.log('Model center:', center);
+      
+
+      // → glowMesh 생성도 여기서!
+      const glowMaterial = new MeshBasicMaterial({
+       color: 0xffff00, // 원하는 발광 색상 (노란색)
+       transparent: true,
+       opacity: 0.5
+     });
+      const glowGeometry = new SphereGeometry(0.1, 32, 32);
+      const glowMesh = new Mesh(glowGeometry, glowMaterial);
+       glowMesh.position.set(0, 0, 0);
+       glowMesh.layers.set(1); // bloom 레이어
+       // 오브젝트에 자식으로 추가
+       gltf.scene.add(glowMesh);
+
+
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const fxaaPass = new ShaderPass(FXAAShader);
+    fxaaPass.uniforms['resolution'].value.set(1 / window.innerWidth, 1 / window.innerHeight);
+    composer.addPass(fxaaPass);
+  },
+  undefined,  // onProgress
+  function (error) {
+    console.error('GLTF 로딩 오류:', error);
+  }
+);
+            
+     
+    // 모델을 강조하는 조명 추가
+    const pointLight = new PointLight(0xffffff, 3, 100);
+    pointLight.position.set(0, 0, 50); // 모델 위쪽 조명 추가
+    scene.add(pointLight)
+   
+    initPostProcessing();
+
+      animate();
+    });
+  }
+    function initPostProcessing() {
+      const renderPass = new RenderPass(scene, camera);
+      bloomPass = new UnrealBloomPass(
+        new Vector2(window.innerWidth, window.innerHeight),
+        0.05,   // bloom 강도
+        0.2,   // bloom 반경
+        1.35   // bloom 임계값
+      );
+      bloomPass.resolution.set(window.innerWidth / 2, window.innerHeight / 2);
+      composer = new EffectComposer(renderer);
+      composer.addPass(renderPass);
+      composer.addPass(bloomPass);
+    }
+
+
+    function animate() {
+      requestAnimationFrame(animate);
+      
+      if (water) {
+        water.material.uniforms['time'].value += 0.05;
+      }
+     
+      if (points) {
+        points.rotation.y += 0.03;
+      }
+
+      controls.update();
+      const positions = particles.geometry.attributes.position.array;
+      const scales = particles.geometry.attributes.scale.array;
+
+      let i = 0, j = 0;
+      for (let ix = 0; ix < AMOUNTX; ix++) {
+       for (let iy = 0; iy < AMOUNTY; iy++) {
+        positions[i + 1] = (Math.sin((ix + count) * 0.3) * 50) + (Math.sin((iy + count) * 0.5) * 50);
+        scales[j] = (Math.sin((ix + count) * 0.3) + 1) * 20 + (Math.sin((iy + count) * 0.5) + 1) * 20;
+        i += 3;
+        j++;
+       }
+      }
+     particles.geometry.attributes.position.needsUpdate = true;
+     particles.geometry.attributes.scale.needsUpdate = true;
+     count += 0.1;
+     renderer.render(scene, camera);
+     composer.render();
+    }
+
+    function onWResize() {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    }
+    init();
+
+  </script>
+</body>
+</html>
