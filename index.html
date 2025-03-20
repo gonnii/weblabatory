@@ -239,6 +239,8 @@
       // 마우스 좌표 정규화
        mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
        mouse.y = -(event.clientY / window.innerHeight) * 2 + 1;
+      
+      window.addEventListener("touchstart", handleObjectClick);
 
       // Raycasting 수행
       raycaster.setFromCamera(mouse, camera);
